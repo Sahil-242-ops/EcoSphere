@@ -1,0 +1,47 @@
+steps:
+  # 1. Build the multi-stage Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t',
+      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$SERVICE_NAME:$COMMIT_SHA',
+      '.'
+    ]
+
+  # 2. Push the Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$SERVICE_NAME:$COMMIT_SHA'
+    ]
+
+  # 3. Deploy the container image to Google Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args: [
+      'run',
+      'deploy',
+      '$SERVICE_NAME',
+      '--image',
+      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$SERVICE_NAME:$COMMIT_SHA',
+      '--region',
+      '$_REGION',
+      '--platform',
+      'managed',
+      '--allow-unauthenticated',
+      '--set-env-vars',
+      'MOCK_MODE=false,GCP_PROJECT_ID=$PROJECT_ID,GEMINI_MODEL=gemini-1.5-flash'
+    ]
+
+# Default values for substitution parameters
+substitutions:
+  _AR_HOSTNAME: 'us-central1-docker.pkg.dev'
+  _AR_REPO: 'ecosphere-repo'
+  _SERVICE_NAME: 'ecosphere-app'
+  _REGION: 'us-central1'
+
+images:
+  - '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$_SERVICE_NAME:$COMMIT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
