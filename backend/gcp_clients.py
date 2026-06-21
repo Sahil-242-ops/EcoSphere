@@ -528,75 +528,82 @@ def stream_to_bigquery(log: EmissionLogResponse) -> bool:
 
 
 # --- STATISTICS HELPER ---
+def _get_sqlite_aggregate_stats(owner_id: str, is_user: bool = False) -> Dict[str, Any]:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        
+        # Fetch device totals & averages
+        if is_user:
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as count,
+                    AVG(total_co2_kg) as avg_co2,
+                    AVG(water_liters) as avg_water,
+                    AVG(waste_kg) as avg_waste,
+                    AVG(electricity_kwh) as avg_elec,
+                    AVG(commute_km) as avg_commute
+                FROM bigquery_analytics 
+                WHERE user_id = ?
+            """, (owner_id,))
+        else:
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as count,
+                    AVG(total_co2_kg) as avg_co2,
+                    AVG(water_liters) as avg_water,
+                    AVG(waste_kg) as avg_waste,
+                    AVG(electricity_kwh) as avg_elec,
+                    AVG(commute_km) as avg_commute
+                FROM bigquery_analytics 
+                WHERE device_id = ? AND (user_id IS NULL OR user_id = '')
+            """, (owner_id,))
+            
+        user_row = cursor.fetchone()
+        
+        # Fetch global averages
+        cursor.execute("""
+            SELECT 
+                AVG(total_co2_kg) as global_co2,
+                AVG(water_liters) as global_water,
+                AVG(waste_kg) as global_waste,
+                AVG(electricity_kwh) as global_elec,
+                AVG(commute_km) as global_commute
+            FROM bigquery_analytics
+        """)
+        global_row = cursor.fetchone()
+        conn.close()
+        
+        u_count = user_row[0] or 0
+        return {
+            "user_logs_count": u_count,
+            "user_averages": {
+                "co2": user_row[1] or 0.0,
+                "water": user_row[2] or 0.0,
+                "waste": user_row[3] or 0.0,
+                "electricity": user_row[4] or 0.0,
+                "commute": user_row[5] or 0.0,
+            },
+            "global_averages": {
+                "co2": global_row[0] or 15.0,
+                "water": global_row[1] or 150.0,
+                "waste": global_row[2] or 2.5,
+                "electricity": global_row[3] or 12.0,
+                "commute": global_row[4] or 25.0,
+            }
+        }
+    except Exception as e:
+        print(f"[ERROR] SQLite aggregation failed: {e}")
+        return {
+            "user_logs_count": 0,
+            "user_averages": {"co2": 0.0, "water": 0.0, "waste": 0.0, "electricity": 0.0, "commute": 0.0},
+            "global_averages": {"co2": 15.0, "water": 150.0, "waste": 2.5, "electricity": 12.0, "commute": 25.0}
+        }
+
 def get_aggregate_stats(owner_id: str, is_user: bool = False) -> Dict[str, Any]:
     """Retrieves aggregated statistics for user comparison benchmarks."""
     if is_mock or bigquery_client is None:
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            
-            # Fetch device totals & averages
-            if is_user:
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as count,
-                        AVG(total_co2_kg) as avg_co2,
-                        AVG(water_liters) as avg_water,
-                        AVG(waste_kg) as avg_waste,
-                        AVG(electricity_kwh) as avg_elec,
-                        AVG(commute_km) as avg_commute
-                    FROM bigquery_analytics 
-                    WHERE user_id = ?
-                """, (owner_id,))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        COUNT(*) as count,
-                        AVG(total_co2_kg) as avg_co2,
-                        AVG(water_liters) as avg_water,
-                        AVG(waste_kg) as avg_waste,
-                        AVG(electricity_kwh) as avg_elec,
-                        AVG(commute_km) as avg_commute
-                    FROM bigquery_analytics 
-                    WHERE device_id = ? AND (user_id IS NULL OR user_id = '')
-                """, (owner_id,))
-                
-            user_row = cursor.fetchone()
-            
-            # Fetch global averages
-            cursor.execute("""
-                SELECT 
-                    AVG(total_co2_kg) as global_co2,
-                    AVG(water_liters) as global_water,
-                    AVG(waste_kg) as global_waste,
-                    AVG(electricity_kwh) as global_elec,
-                    AVG(commute_km) as global_commute
-                FROM bigquery_analytics
-            """)
-            global_row = cursor.fetchone()
-            conn.close()
-            
-            u_count = user_row[0] or 0
-            return {
-                "user_logs_count": u_count,
-                "user_averages": {
-                    "co2": user_row[1] or 0.0,
-                    "water": user_row[2] or 0.0,
-                    "waste": user_row[3] or 0.0,
-                    "electricity": user_row[4] or 0.0,
-                    "commute": user_row[5] or 0.0,
-                },
-                "global_averages": {
-                    "co2": global_row[0] or 15.0,
-                    "water": global_row[1] or 150.0,
-                    "waste": global_row[2] or 2.5,
-                    "electricity": global_row[3] or 12.0,
-                    "commute": global_row[4] or 25.0,
-                }
-            }
-        except Exception as e:
-            print(f"[ERROR] SQLite aggregation failed: {e}")
-            return {}
+        return _get_sqlite_aggregate_stats(owner_id, is_user)
             
     try:
         # Run analytical query in BigQuery
@@ -639,7 +646,7 @@ def get_aggregate_stats(owner_id: str, is_user: bool = False) -> Dict[str, Any]:
         }
     except Exception as e:
         print(f"[ERROR] BigQuery analytics failed: {e}. Falling back to SQLite aggregates.")
-        return get_aggregate_stats(owner_id, is_user)
+        return _get_sqlite_aggregate_stats(owner_id, is_user)
 
 
 def get_user_by_firebase_uid(uid: str) -> Optional[Dict[str, Any]]:
