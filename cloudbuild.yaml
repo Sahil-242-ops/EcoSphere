@@ -36,7 +36,7 @@ steps:
 # Default values for substitution parameters
 substitutions:
   _AR_HOSTNAME: 'us-central1-docker.pkg.dev'
-  _AR_REPO: 'ecosphere-repo'
+  _AR_REPO: 'cloud-run-source-deploy'
   _SERVICE_NAME: 'ecosphere-app'
   _REGION: 'us-central1'
 
