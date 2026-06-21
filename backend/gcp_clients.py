@@ -366,41 +366,44 @@ def save_emission_log(log: EmissionLogResponse) -> bool:
         print(f"[ERROR] Firestore write failed: {e}")
         return False
 
+def _get_sqlite_emission_history(owner_id: str, is_user: bool = False, limit: int = 30) -> List[Dict[str, Any]]:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if is_user:
+            cursor.execute("""
+                SELECT * FROM emissions 
+                WHERE user_id = ? 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (owner_id, limit))
+        else:
+            cursor.execute("""
+                SELECT * FROM emissions 
+                WHERE device_id = ? AND (user_id IS NULL OR user_id = '')
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            """, (owner_id, limit))
+            
+        rows = cursor.fetchall()
+        conn.close()
+        
+        history = []
+        for row in rows:
+            item = dict(row)
+            item["timestamp"] = datetime.fromisoformat(item["timestamp"])
+            history.append(item)
+        return history
+    except Exception as e:
+        print(f"[ERROR] SQLite history fetch failed: {e}")
+        return []
+
 def get_emission_history(owner_id: str, is_user: bool = False, limit: int = 30) -> List[Dict[str, Any]]:
     """Retrieves logs history filtered by Google user_id or device_id."""
     if is_mock or firestore_client is None:
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            if is_user:
-                cursor.execute("""
-                    SELECT * FROM emissions 
-                    WHERE user_id = ? 
-                    ORDER BY timestamp DESC 
-                    LIMIT ?
-                """, (owner_id, limit))
-            else:
-                cursor.execute("""
-                    SELECT * FROM emissions 
-                    WHERE device_id = ? AND (user_id IS NULL OR user_id = '')
-                    ORDER BY timestamp DESC 
-                    LIMIT ?
-                """, (owner_id, limit))
-                
-            rows = cursor.fetchall()
-            conn.close()
-            
-            history = []
-            for row in rows:
-                item = dict(row)
-                item["timestamp"] = datetime.fromisoformat(item["timestamp"])
-                history.append(item)
-            return history
-        except Exception as e:
-            print(f"[ERROR] SQLite history fetch failed: {e}")
-            return []
+        return _get_sqlite_emission_history(owner_id, is_user, limit)
             
     try:
         query = firestore_client.collection("emissions")
@@ -425,8 +428,8 @@ def get_emission_history(owner_id: str, is_user: bool = False, limit: int = 30) 
             history.append(doc_dict)
         return history
     except Exception as e:
-        print(f"[ERROR] Firestore history fetch failed: {e}")
-        return get_emission_history(owner_id, is_user, limit)
+        print(f"[ERROR] Firestore history fetch failed: {e}. Falling back to SQLite history.")
+        return _get_sqlite_emission_history(owner_id, is_user, limit)
 
 
 # --- PUB/SUB ---
