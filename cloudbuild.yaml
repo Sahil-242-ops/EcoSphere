@@ -4,7 +4,7 @@ steps:
     args: [
       'build',
       '-t',
-      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$SERVICE_NAME:$COMMIT_SHA',
+      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$_SERVICE_NAME:$COMMIT_SHA',
       '.'
     ]
 
@@ -12,7 +12,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'push',
-      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$SERVICE_NAME:$COMMIT_SHA'
+      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$_SERVICE_NAME:$COMMIT_SHA'
     ]
 
   # 3. Deploy the container image to Google Cloud Run
@@ -21,9 +21,9 @@ steps:
     args: [
       'run',
       'deploy',
-      '$SERVICE_NAME',
+      '$_SERVICE_NAME',
       '--image',
-      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$SERVICE_NAME:$COMMIT_SHA',
+      '$_AR_HOSTNAME/$PROJECT_ID/$_AR_REPO/$_SERVICE_NAME:$COMMIT_SHA',
       '--region',
       '$_REGION',
       '--platform',
